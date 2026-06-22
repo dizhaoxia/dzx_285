@@ -36,6 +36,27 @@ contextBridge.exposeInMainWorld('api', {
     showInFolder: (filePath) => ipcRenderer.invoke('attachments:showInFolder', filePath)
   },
 
+  budgets: {
+    getByMonth: (year, month) => ipcRenderer.invoke('budgets:getByMonth', year, month),
+    create: (budgetData) => ipcRenderer.invoke('budgets:create', budgetData),
+    update: (id, budgetData) => ipcRenderer.invoke('budgets:update', id, budgetData),
+    delete: (id) => ipcRenderer.invoke('budgets:delete', id),
+    list: (year) => ipcRenderer.invoke('budgets:list', year),
+    getProgress: (year, month) => ipcRenderer.invoke('budgets:getProgress', year, month),
+    ensureCurrentMonth: () => ipcRenderer.invoke('budgets:ensureCurrentMonth')
+  },
+
+  importApi: {
+    parseFile: (filePath, options) => ipcRenderer.invoke('import:parseFile', filePath, options),
+    mapFields: (rows, fieldMapping) => ipcRenderer.invoke('import:mapFields', rows, fieldMapping),
+    detectDuplicates: (mappedRows) => ipcRenderer.invoke('import:detectDuplicates', mappedRows),
+    confirmImport: (rows, accountId) => ipcRenderer.invoke('import:confirmImport', rows, accountId)
+  },
+
+  exportApi: {
+    generate: (format, filters, filePath) => ipcRenderer.invoke('export:generate', format, filters, filePath)
+  },
+
   dialog: {
     openFile: (options) => ipcRenderer.invoke('dialog:openFile', options),
     showSaveDialog: (options) => ipcRenderer.invoke('dialog:showSaveDialog', options)

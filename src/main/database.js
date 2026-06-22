@@ -112,6 +112,28 @@ async function createTables() {
     table.timestamp('created_at').defaultTo(db.fn.now());
     table.index('transaction_id');
   });
+
+  await createTableIfNotExists('budgets', function(table) {
+    table.increments('id').primary();
+    table.integer('year').notNullable();
+    table.integer('month').notNullable();
+    table.decimal('total_amount', 12, 2).notNullable().defaultTo(0);
+    table.timestamp('created_at').defaultTo(db.fn.now());
+    table.timestamp('updated_at').defaultTo(db.fn.now());
+    table.unique(['year', 'month']);
+  });
+
+  await createTableIfNotExists('category_budgets', function(table) {
+    table.increments('id').primary();
+    table.integer('budget_id').unsigned().notNullable();
+    table.foreign('budget_id').references('budgets.id').onDelete('CASCADE');
+    table.string('category').notNullable();
+    table.decimal('amount', 12, 2).notNullable().defaultTo(0);
+    table.timestamp('created_at').defaultTo(db.fn.now());
+    table.timestamp('updated_at').defaultTo(db.fn.now());
+    table.unique(['budget_id', 'category']);
+    table.index('budget_id');
+  });
 }
 
 async function initDatabase() {

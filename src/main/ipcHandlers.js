@@ -2,6 +2,11 @@ const { createRepositories } = require('./repositories');
 const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const ImportService = require('./services/ImportService');
+const ExportService = require('./services/ExportService');
+
+const importService = new ImportService();
+const exportService = new ExportService();
 
 function setupIpcHandlers(ipcMain, dbModule, dialog, app, mainWindow) {
   const db = dbModule.getDb();
@@ -271,6 +276,152 @@ function setupIpcHandlers(ipcMain, dbModule, dialog, app, mainWindow) {
       const { shell } = require('electron');
       shell.showItemInFolder(filePath);
       return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('budgets:getByMonth', async (_, year, month) => {
+    try {
+      const budget = await repos.budgets.getByMonth(year, month);
+      return { success: true, data: budget };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('budgets:create', async (_, budgetData) => {
+    try {
+      const budget = await repos.budgets.create(budgetData);
+      return { success: true, data: budget };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('budgets:update', async (_, id, budgetData) => {
+    try {
+      const budget = await repos.budgets.update(id, budgetData);
+      return { success: true, data: budget };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('budgets:delete', async (_, id) => {
+    try {
+      await repos.budgets.delete(id);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('budgets:list', async (_, year) => {
+    try {
+      const budgets = await repos.budgets.list(year);
+      return { success: true, data: budgets };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('budgets:getProgress', async (_, year, month) => {
+    try {
+      const progress = await repos.budgets.getProgress(year, month);
+      return { success: true, data: progress };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('budgets:ensureCurrentMonth', async () => {
+    try {
+      const budget = await repos.budgets.ensureCurrentMonthBudget();
+      return { success: true, data: budget };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('import:parseFile', async (_, filePath, options) => {
+    try {
+      const result = importService.parseFile(filePath, options || {});
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('import:mapFields', async (_, rows, fieldMapping) => {
+    try {
+      const mapped = importService.mapFields(rows, fieldMapping);
+      return { success: true, data: mapped };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('import:detectDuplicates', async (_, mappedRows) => {
+    try {
+      const result = await importService.detectDuplicates(mappedRows, db);
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('import:confirmImport', async (_, rows, accountId) => {
+    try {
+      const imported = [];
+      for (const row of rows) {
+        if (!row.date || !row.amount) continue;
+        const txData = {
+          type: row.type || 'expense',
+          amount: parseFloat(row.amount) || 0,
+          date: new Date(row.date).toISOString(),
+          category: row.category || '未分类',
+          account_id: parseInt(accountId),
+          note: row.note || ''
+        };
+        const transaction = await repos.transactions.create(txData, []);
+        imported.push(transaction);
+      }
+      return { success: true, data: { imported: imported.length, total: rows.length } };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('export:generate', async (_, format, filters, filePath) => {
+    try {
+      const txFilters = {};
+      if (filters.start_date) txFilters.start_date = filters.start_date;
+      if (filters.end_date) txFilters.end_date = filters.end_date;
+      if (filters.account_id) txFilters.account_id = filters.account_id;
+      if (filters.category) txFilters.category = filters.category;
+      if (filters.type) txFilters.type = filters.type;
+
+      const transactions = await repos.transactions.list(txFilters);
+      for (const t of transactions) {
+        const account = await repos.accounts.getById(t.account_id);
+        t.account_name = account ? account.name : '';
+      }
+
+      let accounts = [];
+      if (filters.include_accounts !== false) {
+        accounts = await repos.accounts.getAll();
+      }
+
+      let budgets = [];
+      if (filters.include_budgets !== false) {
+        const now = new Date();
+        budgets = await repos.budgets.list(now.getFullYear());
+      }
+
+      const data = { transactions, accounts, budgets };
+      const result = await exportService.export(data, format, filePath);
+      return { success: true, data: result };
     } catch (error) {
       return { success: false, error: error.message };
     }

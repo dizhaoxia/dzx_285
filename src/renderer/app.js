@@ -7,6 +7,15 @@ const AppState = {
   newAttachments: [],
   existingAttachments: [],
   attachmentsToDelete: [],
+  budgetProgress: null,
+  budgetCategoryBudgets: [],
+  importState: {
+    filePath: null,
+    parsedData: null,
+    fieldMapping: {},
+    mappedRows: [],
+    duplicateInfo: null
+  },
   filters: {
     type: '',
     category: '',
@@ -762,6 +771,433 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+async function loadBudgetProgress() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  const result = await window.api.budgets.getProgress(year, month);
+  if (result.success) {
+    AppState.budgetProgress = result.data;
+    renderBudgetSidebar();
+  }
+}
+
+function renderBudgetSidebar() {
+  const progress = AppState.budgetProgress;
+  if (!progress || !progress.budget) {
+    document.getElementById('budgetTotalAmount').textContent = '未设置';
+    document.getElementById('budgetTotalSpent').textContent = '¥0.00';
+    document.getElementById('budgetTotalProgressFill').style.width = '0%';
+    document.getElementById('budgetTotalProgressFill').className = 'budget-progress-fill';
+    document.getElementById('budgetTotalProgressText').textContent = '0%';
+    document.getElementById('budgetCategoryList').innerHTML = '<p class="budget-empty">点击 ✎ 设置预算</p>';
+    return;
+  }
+
+  const budget = progress.budget;
+  document.getElementById('budgetTotalAmount').textContent = formatCurrency(budget.total_amount);
+  document.getElementById('budgetTotalSpent').textContent = formatCurrency(progress.total_spent);
+
+  const pct = progress.total_percentage;
+  const fill = document.getElementById('budgetTotalProgressFill');
+  fill.style.width = Math.min(pct, 100) + '%';
+  fill.className = 'budget-progress-fill';
+  if (progress.total_warning_level === 'red') {
+    fill.classList.add('budget-danger');
+  } else if (progress.total_warning_level === 'yellow') {
+    fill.classList.add('budget-warning');
+  }
+  document.getElementById('budgetTotalProgressText').textContent = pct + '%';
+
+  const catList = document.getElementById('budgetCategoryList');
+  catList.innerHTML = '';
+  (progress.category_progress || []).forEach(cp => {
+    const item = document.createElement('div');
+    item.className = 'budget-category-item';
+    const barClass = cp.warning_level === 'red' ? 'budget-danger' : cp.warning_level === 'yellow' ? 'budget-warning' : '';
+    item.innerHTML = `
+      <div class="budget-cat-header">
+        <span class="budget-cat-name">${escapeHtml(cp.category)}</span>
+        <span class="budget-cat-amount">${formatCurrency(cp.spent)} / ${formatCurrency(cp.budget_amount)}</span>
+      </div>
+      <div class="budget-progress-container">
+        <div class="budget-progress-bar budget-progress-bar-sm">
+          <div class="budget-progress-fill ${barClass}" style="width: ${Math.min(cp.percentage, 100)}%"></div>
+        </div>
+        <span class="budget-progress-text">${cp.percentage}%</span>
+      </div>
+    `;
+    catList.appendChild(item);
+  });
+}
+
+function openBudgetModal() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  document.getElementById('budgetYear').value = year;
+  document.getElementById('budgetMonth').value = month;
+  document.getElementById('budgetId').value = '';
+
+  AppState.budgetCategoryBudgets = [];
+
+  const progress = AppState.budgetProgress;
+  if (progress && progress.budget) {
+    document.getElementById('budgetId').value = progress.budget.id;
+    document.getElementById('budgetTotalAmountInput').value = progress.budget.total_amount;
+    if (progress.budget.category_budgets) {
+      AppState.budgetCategoryBudgets = progress.budget.category_budgets.map(cb => ({
+        category: cb.category,
+        amount: parseFloat(cb.amount)
+      }));
+    }
+  } else {
+    document.getElementById('budgetTotalAmountInput').value = 0;
+  }
+
+  renderCategoryBudgetList();
+  openModal('budgetModal');
+}
+
+function renderCategoryBudgetList() {
+  const list = document.getElementById('categoryBudgetList');
+  list.innerHTML = '';
+
+  AppState.budgetCategoryBudgets.forEach((cb, idx) => {
+    const row = document.createElement('div');
+    row.className = 'category-budget-row';
+    row.innerHTML = `
+      <span class="cb-name">${escapeHtml(cb.category)}</span>
+      <span class="cb-amount">${formatCurrency(cb.amount)}</span>
+      <button type="button" class="cb-remove" onclick="removeCategoryBudget(${idx})">×</button>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function removeCategoryBudget(idx) {
+  AppState.budgetCategoryBudgets.splice(idx, 1);
+  renderCategoryBudgetList();
+}
+
+async function saveBudget(e) {
+  e.preventDefault();
+
+  const id = document.getElementById('budgetId').value;
+  const year = parseInt(document.getElementById('budgetYear').value);
+  const month = parseInt(document.getElementById('budgetMonth').value);
+  const totalAmount = parseFloat(document.getElementById('budgetTotalAmountInput').value) || 0;
+
+  if (!year || !month) {
+    showToast('请选择年月', 'error');
+    return;
+  }
+
+  const budgetData = {
+    year,
+    month,
+    total_amount: totalAmount,
+    category_budgets: AppState.budgetCategoryBudgets
+  };
+
+  let result;
+  if (id) {
+    result = await window.api.budgets.update(parseInt(id), budgetData);
+  } else {
+    result = await window.api.budgets.create(budgetData);
+  }
+
+  if (result.success) {
+    showToast(id ? '预算更新成功' : '预算创建成功', 'success');
+    closeModal('budgetModal');
+    loadBudgetProgress();
+  } else {
+    showToast('保存失败: ' + result.error, 'error');
+  }
+}
+
+function openImportModal() {
+  AppState.importState = {
+    filePath: null,
+    parsedData: null,
+    fieldMapping: {},
+    mappedRows: [],
+    duplicateInfo: null
+  };
+
+  document.getElementById('importFileName').textContent = '未选择文件';
+  document.getElementById('importNextStep1Btn').disabled = true;
+  document.getElementById('importStep1').style.display = '';
+  document.getElementById('importStep2').style.display = 'none';
+  document.getElementById('importStep3').style.display = 'none';
+
+  const importAccountSelect = document.getElementById('importAccount');
+  importAccountSelect.innerHTML = '';
+  AppState.accounts.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.id;
+    opt.textContent = a.name;
+    importAccountSelect.appendChild(opt);
+  });
+  if (AppState.currentAccountId) {
+    importAccountSelect.value = AppState.currentAccountId;
+  }
+
+  openModal('importModal');
+}
+
+async function importSelectFile() {
+  const result = await window.api.dialog.openFile({
+    properties: ['openFile'],
+    filters: [{ name: '账单文件', extensions: ['csv', 'qif'] }]
+  });
+
+  if (result.success && result.data && !result.data.canceled && result.data.filePaths.length > 0) {
+    const filePath = result.data.filePaths[0];
+    AppState.importState.filePath = filePath;
+    document.getElementById('importFileName').textContent = filePath.split(/[\\/]/).pop();
+    document.getElementById('importNextStep1Btn').disabled = false;
+  }
+}
+
+async function importGoToStep2() {
+  if (!AppState.importState.filePath) return;
+
+  const parseResult = await window.api.importApi.parseFile(AppState.importState.filePath, {});
+  if (!parseResult.success) {
+    showToast('解析文件失败: ' + parseResult.error, 'error');
+    return;
+  }
+
+  AppState.importState.parsedData = parseResult.data;
+  AppState.importState.fieldMapping = {};
+
+  const systemFields = [
+    { value: '', label: '-- 不映射 --' },
+    { value: 'date', label: '日期' },
+    { value: 'type', label: '类型(收入/支出)' },
+    { value: 'amount', label: '金额' },
+    { value: 'category', label: '分类' },
+    { value: 'note', label: '备注' }
+  ];
+
+  const mappingContainer = document.getElementById('importFieldMapping');
+  mappingContainer.innerHTML = '';
+
+  const headers = parseResult.data.headers || [];
+  headers.forEach(header => {
+    const row = document.createElement('div');
+    row.className = 'field-mapping-row';
+
+    const label = document.createElement('span');
+    label.className = 'fm-source';
+    label.textContent = header;
+
+    const arrow = document.createElement('span');
+    arrow.textContent = '→';
+
+    const select = document.createElement('select');
+    select.className = 'fm-target';
+    systemFields.forEach(sf => {
+      const opt = document.createElement('option');
+      opt.value = sf.value;
+      opt.textContent = sf.label;
+      select.appendChild(opt);
+    });
+
+    const lowerHeader = header.toLowerCase();
+    if (lowerHeader.includes('date') || lowerHeader.includes('日期')) select.value = 'date';
+    else if (lowerHeader.includes('amount') || lowerHeader.includes('金额')) select.value = 'amount';
+    else if (lowerHeader.includes('type') || lowerHeader.includes('类型')) select.value = 'type';
+    else if (lowerHeader.includes('categor') || lowerHeader.includes('分类')) select.value = 'category';
+    else if (lowerHeader.includes('note') || lowerHeader.includes('memo') || lowerHeader.includes('备注')) select.value = 'note';
+
+    AppState.importState.fieldMapping[header] = select.value;
+
+    select.onchange = () => {
+      AppState.importState.fieldMapping[header] = select.value;
+    };
+
+    row.appendChild(label);
+    row.appendChild(arrow);
+    row.appendChild(select);
+    mappingContainer.appendChild(row);
+  });
+
+  document.getElementById('importStep1').style.display = 'none';
+  document.getElementById('importStep2').style.display = '';
+}
+
+async function importGoToStep3() {
+  const rows = AppState.importState.parsedData.rows || [];
+  const fieldMapping = AppState.importState.fieldMapping;
+
+  const mapResult = await window.api.importApi.mapFields(rows, fieldMapping);
+  if (!mapResult.success) {
+    showToast('字段映射失败: ' + mapResult.error, 'error');
+    return;
+  }
+
+  AppState.importState.mappedRows = mapResult.data;
+
+  const dupResult = await window.api.importApi.detectDuplicates(mapResult.data);
+  if (dupResult.success) {
+    AppState.importState.duplicateInfo = dupResult.data;
+  }
+
+  const dupInfo = document.getElementById('importDuplicateInfo');
+  if (AppState.importState.duplicateInfo) {
+    const d = AppState.importState.duplicateInfo;
+    dupInfo.innerHTML = `<span class="dup-info">共 ${d.unique.length + d.duplicates.length} 条记录，检测到 ${d.duplicates.length} 条重复，将导入 ${d.unique.length} 条新记录</span>`;
+  }
+
+  const previewRows = AppState.importState.duplicateInfo
+    ? AppState.importState.duplicateInfo.unique
+    : AppState.importState.mappedRows;
+
+  const thead = document.getElementById('importPreviewHead');
+  const tbody = document.getElementById('importPreviewBody');
+  thead.innerHTML = '';
+  tbody.innerHTML = '';
+
+  const previewHeaders = ['日期', '类型', '金额', '分类', '备注'];
+  const headerRow = document.createElement('tr');
+  previewHeaders.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+
+  const displayRows = previewRows.slice(0, 20);
+  displayRows.forEach(row => {
+    const tr = document.createElement('tr');
+    const typeLabel = row.type === 'income' ? '收入' : '支出';
+    tr.innerHTML = `
+      <td>${escapeHtml(row.date || '')}</td>
+      <td>${typeLabel}</td>
+      <td>${row.amount || 0}</td>
+      <td>${escapeHtml(row.category || '')}</td>
+      <td>${escapeHtml(row.note || '')}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  if (previewRows.length > 20) {
+    const moreRow = document.createElement('tr');
+    const moreCell = document.createElement('td');
+    moreCell.colSpan = 5;
+    moreCell.style.textAlign = 'center';
+    moreCell.style.color = '#999';
+    moreCell.textContent = `还有 ${previewRows.length - 20} 条记录...`;
+    moreRow.appendChild(moreCell);
+    tbody.appendChild(moreRow);
+  }
+
+  document.getElementById('importStep2').style.display = 'none';
+  document.getElementById('importStep3').style.display = '';
+}
+
+async function importConfirm() {
+  const accountId = document.getElementById('importAccount').value;
+  if (!accountId) {
+    showToast('请选择导入账户', 'error');
+    return;
+  }
+
+  const rowsToImport = AppState.importState.duplicateInfo
+    ? AppState.importState.duplicateInfo.unique
+    : AppState.importState.mappedRows;
+
+  if (rowsToImport.length === 0) {
+    showToast('没有可导入的记录', 'error');
+    return;
+  }
+
+  const result = await window.api.importApi.confirmImport(rowsToImport, accountId);
+  if (result.success) {
+    showToast(`成功导入 ${result.data.imported} 条记录`, 'success');
+    closeModal('importModal');
+    loadTransactions();
+    loadAccounts();
+    loadSummary();
+    loadBudgetProgress();
+  } else {
+    showToast('导入失败: ' + result.error, 'error');
+  }
+}
+
+function openExportModal() {
+  const accountSelect = document.getElementById('exportAccount');
+  accountSelect.innerHTML = '<option value="">全部账户</option>';
+  AppState.accounts.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.id;
+    opt.textContent = a.name;
+    accountSelect.appendChild(opt);
+  });
+
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  document.getElementById('exportStartDate').value = firstDay;
+  document.getElementById('exportEndDate').value = lastDay;
+  document.getElementById('exportFormat').value = 'xlsx';
+
+  loadExportCategories();
+
+  openModal('exportModal');
+}
+
+async function loadExportCategories() {
+  const result = await window.api.transactions.getCategories('');
+  if (result.success) {
+    const select = document.getElementById('exportCategory');
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">全部分类</option>';
+    result.data.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      select.appendChild(opt);
+    });
+    if (currentVal) select.value = currentVal;
+  }
+}
+
+async function handleExport(e) {
+  e.preventDefault();
+
+  const format = document.getElementById('exportFormat').value;
+  const filters = {
+    start_date: document.getElementById('exportStartDate').value || '',
+    end_date: document.getElementById('exportEndDate').value || '',
+    account_id: document.getElementById('exportAccount').value || '',
+    category: document.getElementById('exportCategory').value || '',
+    type: document.getElementById('exportType').value || '',
+    include_accounts: document.getElementById('exportIncludeAccounts').checked,
+    include_budgets: document.getElementById('exportIncludeBudgets').checked
+  };
+
+  const extensions = { xlsx: 'xlsx', csv: 'csv', pdf: 'pdf' };
+  const result = await window.api.dialog.showSaveDialog({
+    defaultPath: `财务数据导出.${extensions[format]}`,
+    filters: [{ name: format.toUpperCase(), extensions: [extensions[format]] }]
+  });
+
+  if (!result.success || !result.data || result.data.canceled) return;
+
+  const exportResult = await window.api.exportApi.generate(format, filters, result.data.filePath);
+  if (exportResult.success) {
+    showToast('导出成功', 'success');
+    closeModal('exportModal');
+  } else {
+    showToast('导出失败: ' + exportResult.error, 'error');
+  }
+}
+
 function initEventListeners() {
   document.getElementById('addAccountBtn').onclick = () => openAccountModal();
   document.getElementById('addTagBtn').onclick = openTagModal;
@@ -772,6 +1208,8 @@ function initEventListeners() {
   document.getElementById('accountForm').onsubmit = saveAccount;
   document.getElementById('transactionForm').onsubmit = saveTransaction;
   document.getElementById('tagForm').onsubmit = saveTag;
+  document.getElementById('budgetForm').onsubmit = saveBudget;
+  document.getElementById('exportForm').onsubmit = handleExport;
 
   document.getElementById('addAttachmentBtn').onclick = addAttachment;
   
@@ -800,6 +1238,34 @@ function initEventListeners() {
   document.getElementById('sortOrder').onchange = applyFilters;
   document.getElementById('resetFilterBtn').onclick = resetFilters;
 
+  document.getElementById('editBudgetBtn').onclick = openBudgetModal;
+  document.getElementById('openImportBtn').onclick = openImportModal;
+  document.getElementById('openExportBtn').onclick = openExportModal;
+
+  document.getElementById('addCategoryBudgetBtn').onclick = () => {
+    const name = document.getElementById('newCategoryName').value.trim();
+    const amount = parseFloat(document.getElementById('newCategoryAmount').value) || 0;
+    if (name) {
+      AppState.budgetCategoryBudgets.push({ category: name, amount });
+      document.getElementById('newCategoryName').value = '';
+      document.getElementById('newCategoryAmount').value = '';
+      renderCategoryBudgetList();
+    }
+  };
+
+  document.getElementById('importSelectFileBtn').onclick = importSelectFile;
+  document.getElementById('importNextStep1Btn').onclick = importGoToStep2;
+  document.getElementById('importBackStep2Btn').onclick = () => {
+    document.getElementById('importStep2').style.display = 'none';
+    document.getElementById('importStep1').style.display = '';
+  };
+  document.getElementById('importNextStep2Btn').onclick = importGoToStep3;
+  document.getElementById('importBackStep3Btn').onclick = () => {
+    document.getElementById('importStep3').style.display = 'none';
+    document.getElementById('importStep2').style.display = '';
+  };
+  document.getElementById('importConfirmBtn').onclick = importConfirm;
+
   document.querySelectorAll('.close-btn, [data-modal]').forEach(btn => {
     btn.onclick = (e) => {
       const modalId = e.target.getAttribute('data-modal') || e.target.closest('[data-modal]')?.getAttribute('data-modal');
@@ -826,6 +1292,7 @@ async function init() {
   ]);
   loadTransactions();
   loadSummary();
+  loadBudgetProgress();
 }
 
 window.onload = init;

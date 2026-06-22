@@ -746,3 +746,271 @@ form {
 ::-webkit-scrollbar-thumb:hover {
   background: #a1a1a1;
 }
+
+.budget-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.budget-total-row,
+.budget-spent-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.budget-label {
+  font-size: 12px;
+  color: #666;
+}
+
+.budget-amount {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.budget-progress-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.budget-progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.budget-progress-bar-sm {
+  height: 6px;
+}
+
+.budget-progress-fill {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.budget-progress-fill.budget-warning {
+  background: #f59e0b;
+}
+
+.budget-progress-fill.budget-danger {
+  background: #dc2626;
+}
+
+.budget-progress-text {
+  font-size: 11px;
+  color: #666;
+  min-width: 32px;
+  text-align: right;
+}
+
+.budget-category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.budget-category-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.budget-cat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.budget-cat-name {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.budget-cat-amount {
+  font-size: 11px;
+  color: #666;
+}
+
+.budget-empty {
+  font-size: 12px;
+  color: #999;
+  text-align: center;
+  padding: 8px 0;
+}
+
+.category-budget-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.category-budget-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+}
+
+.cb-name {
+  flex: 1;
+  font-size: 13px;
+}
+
+.cb-amount {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.cb-remove {
+  border: none;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+}
+
+.cb-remove:hover {
+  color: #dc2626;
+}
+
+.add-category-budget-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.add-category-budget-row input {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.import-wizard {
+  padding: 20px 24px;
+}
+
+.import-step {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.import-file-select {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.import-file-name {
+  font-size: 13px;
+  color: #666;
+}
+
+.import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.import-hint {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.import-field-mapping {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.field-mapping-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+}
+
+.fm-source {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.fm-target {
+  width: 160px;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.import-duplicate-info {
+  margin-bottom: 12px;
+}
+
+.dup-info {
+  font-size: 13px;
+  color: #2563eb;
+  font-weight: 500;
+}
+
+.import-preview-container {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.import-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.import-preview-table th {
+  background: #f9fafb;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.import-preview-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  cursor: pointer;
+}
