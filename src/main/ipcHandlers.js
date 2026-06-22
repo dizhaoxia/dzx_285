@@ -373,16 +373,31 @@ function setupIpcHandlers(ipcMain, dbModule, dialog, app, mainWindow) {
 
   ipcMain.handle('import:confirmImport', async (_, rows, accountId) => {
     try {
+      const normalizeType = (typeValue) => {
+        if (!typeValue) return 'expense';
+        const t = String(typeValue).trim().toLowerCase();
+        if (['收入', 'income', 'in', '进', '收款', 'revenue', 'credit', '+'].some(k => t.includes(k))) return 'income';
+        if (['支出', 'expense', 'out', '出', '付款', 'debit', '花费', '消费', '-'].some(k => t.includes(k))) return 'expense';
+        return 'expense';
+      };
+      const normalizeAmount = (amountValue) => {
+        if (amountValue === null || amountValue === undefined || amountValue === '') return 0;
+        if (typeof amountValue === 'number') return amountValue;
+        const num = parseFloat(String(amountValue).replace(/[¥￥$,，\s]/g, ''));
+        return isNaN(num) ? 0 : num;
+      };
+
       const imported = [];
       for (const row of rows) {
-        if (!row.date || !row.amount) continue;
+        const cleanAmount = normalizeAmount(row.amount);
+        if (!row.date || !cleanAmount) continue;
         const txData = {
-          type: row.type || 'expense',
-          amount: parseFloat(row.amount) || 0,
+          type: normalizeType(row.type),
+          amount: cleanAmount,
           date: new Date(row.date).toISOString(),
-          category: row.category || '未分类',
+          category: String(row.category || '未分类').trim() || '未分类',
           account_id: parseInt(accountId),
-          note: row.note || ''
+          note: String(row.note || '').trim()
         };
         const transaction = await repos.transactions.create(txData, []);
         imported.push(transaction);

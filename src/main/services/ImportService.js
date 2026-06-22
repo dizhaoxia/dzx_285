@@ -137,7 +137,7 @@ class ImportService {
       transactions.push(current);
     }
 
-    return transactions.map((t, idx) => ({
+    return transactions.map((t, idx) => this.normalizeRow({
       index: idx + 1,
       date: t.date || '',
       type: t.type || 'expense',
@@ -179,7 +179,7 @@ class ImportService {
   }
 
   mapFields(rows, fieldMapping) {
-    return rows.map(row => {
+    const mapped = rows.map(row => {
       const mapped = {};
       for (const [sourceField, targetField] of Object.entries(fieldMapping)) {
         if (targetField && row[sourceField] !== undefined) {
@@ -188,6 +188,69 @@ class ImportService {
       }
       return mapped;
     });
+    return mapped.map(row => this.normalizeRow(row));
+  }
+
+  normalizeRow(row) {
+    const normalized = { ...row };
+
+    if (normalized.type !== undefined) {
+      normalized.type = this.normalizeType(normalized.type);
+    } else {
+      normalized.type = 'expense';
+    }
+
+    if (normalized.amount !== undefined) {
+      normalized.amount = this.normalizeAmount(normalized.amount);
+    }
+
+    if (normalized.date) {
+      normalized.date = this.normalizeDate(normalized.date);
+    }
+
+    if (normalized.category !== undefined) {
+      normalized.category = String(normalized.category || '').trim();
+    }
+    if (normalized.note !== undefined) {
+      normalized.note = String(normalized.note || '').trim();
+    }
+
+    return normalized;
+  }
+
+  normalizeType(typeValue) {
+    if (!typeValue) return 'expense';
+    const t = String(typeValue).trim().toLowerCase();
+    const incomeKeywords = ['收入', 'income', 'in', '进', '收款', 'revenue', 'credit'];
+    const expenseKeywords = ['支出', 'expense', 'out', '出', '付款', 'debit', '花费', '消费'];
+    if (incomeKeywords.some(k => t.includes(k))) return 'income';
+    if (expenseKeywords.some(k => t.includes(k))) return 'expense';
+    if (t === '+' || t.startsWith('+')) return 'income';
+    if (t === '-' || t.startsWith('-')) return 'expense';
+    return 'expense';
+  }
+
+  normalizeAmount(amountValue) {
+    if (amountValue === null || amountValue === undefined || amountValue === '') return 0;
+    if (typeof amountValue === 'number') return amountValue;
+    const cleaned = String(amountValue)
+      .replace(/[¥￥$,，\s]/g, '')
+      .replace(/[,]/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  }
+
+  normalizeDate(dateValue) {
+    if (!dateValue) return '';
+    if (dateValue instanceof Date) return dateValue.toISOString().split('T')[0];
+    const s = String(dateValue).trim();
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split('T')[0];
+      }
+    } catch (e) {}
+    return s;
   }
 
   async detectDuplicates(mappedRows, db) {
