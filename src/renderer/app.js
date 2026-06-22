@@ -5,6 +5,8 @@ const AppState = {
   tags: [],
   selectedTagIds: [],
   newAttachments: [],
+  existingAttachments: [],
+  attachmentsToDelete: [],
   filters: {
     type: '',
     category: '',
@@ -435,6 +437,8 @@ function openTransactionModal(type = 'expense', transaction = null) {
   
   AppState.selectedTagIds = [];
   AppState.newAttachments = [];
+  AppState.existingAttachments = [];
+  AppState.attachmentsToDelete = [];
 
   if (transaction) {
     title.textContent = '编辑交易';
@@ -446,6 +450,7 @@ function openTransactionModal(type = 'expense', transaction = null) {
     document.getElementById('transactionAccount').value = transaction.account_id;
     document.getElementById('transactionNote').value = transaction.note || '';
     AppState.selectedTagIds = (transaction.tags || []).map(t => t.id);
+    AppState.existingAttachments = (transaction.attachments || []).slice();
   } else {
     title.textContent = type === 'income' ? '添加收入' : '添加支出';
     form.reset();
@@ -459,7 +464,7 @@ function openTransactionModal(type = 'expense', transaction = null) {
   }
 
   renderTagSelector();
-  renderNewAttachments();
+  renderAllAttachments();
   loadCategorySuggestions(type);
   openModal('transactionModal');
 }
@@ -514,28 +519,48 @@ async function saveTransaction(e) {
     note
   };
 
-  let result;
-  if (id) {
-    result = await window.api.transactions.update(parseInt(id), transactionData, AppState.selectedTagIds);
-  } else {
-    result = await window.api.transactions.create(transactionData, AppState.selectedTagIds);
-  }
-
-  if (result.success) {
-    const transactionId = result.data.id;
-    
-    for (const attachment of AppState.newAttachments) {
-      await window.api.attachments.add(transactionId, attachment.path, attachment.name);
+  try {
+    let result;
+    if (id) {
+      result = await window.api.transactions.update(parseInt(id), transactionData, AppState.selectedTagIds);
+    } else {
+      result = await window.api.transactions.create(transactionData, AppState.selectedTagIds);
     }
 
-    showToast(id ? '交易更新成功' : '交易创建成功', 'success');
-    closeModal('transactionModal');
-    loadTransactions();
-    loadAccounts();
-    loadSummary();
-    loadCategorySuggestions(type);
-  } else {
-    showToast('保存失败: ' + result.error, 'error');
+    if (result.success) {
+      const transactionId = result.data.id;
+      
+      for (const attId of AppState.attachmentsToDelete) {
+        console.log('删除已有附件:', attId);
+        const delResult = await window.api.attachments.delete(attId);
+        if (!delResult.success) {
+          console.error('删除附件失败:', attId, delResult.error);
+          showToast(`删除附件失败: ${delResult.error}`, 'error');
+        }
+      }
+      
+      for (let i = 0; i < AppState.newAttachments.length; i++) {
+        const attachment = AppState.newAttachments[i];
+        console.log(`上传附件 ${i + 1}/${AppState.newAttachments.length}:`, attachment.name);
+        const attResult = await window.api.attachments.add(transactionId, attachment.path, attachment.name);
+        if (!attResult.success) {
+          console.error('附件上传失败:', attachment.name, attResult.error);
+          showToast(`附件 ${attachment.name} 上传失败: ${attResult.error}`, 'error');
+        }
+      }
+
+      showToast(id ? '交易更新成功' : '交易创建成功', 'success');
+      closeModal('transactionModal');
+      loadTransactions();
+      loadAccounts();
+      loadSummary();
+      loadCategorySuggestions(type);
+    } else {
+      showToast('保存失败: ' + result.error, 'error');
+    }
+  } catch (error) {
+    console.error('保存交易错误:', error);
+    showToast('保存失败: ' + error.message, 'error');
   }
 }
 
@@ -629,38 +654,74 @@ async function openAttachment(filePath) {
 }
 
 async function addAttachment() {
-  const result = await window.api.dialog.openFile({
-    properties: ['openFile', 'multiSelections']
-  });
+  try {
+    const result = await window.api.dialog.openFile({
+      properties: ['openFile', 'multiSelections']
+    });
+    console.log('选择文件结果:', result);
 
-  if (result.success && result.data && !result.data.canceled && result.data.filePaths) {
-    const fs = require ? null : null;
-    for (const filePath of result.data.filePaths) {
-      const name = filePath.split(/[\\/]/).pop();
-      AppState.newAttachments.push({ path: filePath, name });
+    if (result.success && result.data && !result.data.canceled && result.data.filePaths && result.data.filePaths.length > 0) {
+      for (const filePath of result.data.filePaths) {
+        const name = filePath.split(/[\\/]/).pop();
+        AppState.newAttachments.push({ path: filePath, name });
+        console.log('添加附件:', name, filePath);
+      }
+      renderAllAttachments();
+      showToast(`成功添加 ${result.data.filePaths.length} 个附件`, 'success');
+    } else if (result.data && result.data.canceled) {
+      console.log('用户取消了文件选择');
+    } else {
+      showToast('选择文件失败', 'error');
     }
-    renderNewAttachments();
+  } catch (error) {
+    console.error('添加附件错误:', error);
+    showToast('添加附件失败: ' + error.message, 'error');
   }
 }
 
-function renderNewAttachments() {
+function renderAllAttachments() {
   const list = document.getElementById('attachmentsList');
   list.innerHTML = '';
+
+  AppState.existingAttachments.forEach((att, index) => {
+    const isDeleted = AppState.attachmentsToDelete.includes(att.id);
+    const item = document.createElement('div');
+    item.className = 'attachment-item';
+    if (isDeleted) {
+      item.style.opacity = '0.5';
+      item.style.textDecoration = 'line-through';
+    }
+    item.innerHTML = `
+      <span class="attachment-name" title="已有附件">📎 ${escapeHtml(att.original_name)}</span>
+      <button class="attachment-remove" onclick="toggleExistingAttachment(${att.id})">${isDeleted ? '↩' : '×'}</button>
+    `;
+    list.appendChild(item);
+  });
 
   AppState.newAttachments.forEach((att, index) => {
     const item = document.createElement('div');
     item.className = 'attachment-item';
     item.innerHTML = `
-      <span class="attachment-name">📎 ${escapeHtml(att.name)}</span>
+      <span class="attachment-name" title="新添加的附件">📎 ${escapeHtml(att.name)}</span>
       <button class="attachment-remove" onclick="removeNewAttachment(${index})">×</button>
     `;
     list.appendChild(item);
   });
 }
 
+function toggleExistingAttachment(attId) {
+  const idx = AppState.attachmentsToDelete.indexOf(attId);
+  if (idx > -1) {
+    AppState.attachmentsToDelete.splice(idx, 1);
+  } else {
+    AppState.attachmentsToDelete.push(attId);
+  }
+  renderAllAttachments();
+}
+
 function removeNewAttachment(index) {
   AppState.newAttachments.splice(index, 1);
-  renderNewAttachments();
+  renderAllAttachments();
 }
 
 function applyFilters() {

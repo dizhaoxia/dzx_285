@@ -1,8 +1,9 @@
 const { createRepositories } = require('./repositories');
+const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-function setupIpcHandlers(ipcMain, dbModule, dialog, app) {
+function setupIpcHandlers(ipcMain, dbModule, dialog, app, mainWindow) {
   const db = dbModule.getDb();
   const repos = createRepositories(db);
 
@@ -200,19 +201,28 @@ function setupIpcHandlers(ipcMain, dbModule, dialog, app) {
 
   ipcMain.handle('dialog:openFile', async (_, options = {}) => {
     try {
-      const result = await dialog.showOpenDialog({
+      const win = mainWindow || BrowserWindow.getFocusedWindow();
+      const dialogOptions = {
         properties: ['openFile'],
         ...options
-      });
+      };
+      const result = win 
+        ? await dialog.showOpenDialog(win, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+      console.log('dialog:openFile result:', result);
       return { success: true, data: result };
     } catch (error) {
+      console.error('dialog:openFile error:', error);
       return { success: false, error: error.message };
     }
   });
 
   ipcMain.handle('dialog:showSaveDialog', async (_, options = {}) => {
     try {
-      const result = await dialog.showSaveDialog(options);
+      const win = mainWindow || BrowserWindow.getFocusedWindow();
+      const result = win 
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options);
       return { success: true, data: result };
     } catch (error) {
       return { success: false, error: error.message };

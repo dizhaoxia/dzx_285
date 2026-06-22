@@ -41,8 +41,8 @@ function createWindow() {
 app.whenReady().then(async () => {
   try {
     await db.initDatabase();
-    setupIpcHandlers(ipcMain, db, dialog, app);
     createWindow();
+    setupIpcHandlers(ipcMain, db, dialog, app, mainWindow);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
