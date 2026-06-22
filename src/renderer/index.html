@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个人财务管理</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>财务管理</h1>
+        <div class="total-balance">
+          <span class="balance-label">总资产</span>
+          <span class="balance-value" id="totalBalance">¥0.00</span>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-header">
+          <span>账户</span>
+          <button class="icon-btn" id="addAccountBtn" title="添加账户">+</button>
+        </div>
+        <ul class="account-list" id="accountList">
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-header">
+          <span>标签</span>
+          <button class="icon-btn" id="addTagBtn" title="添加标签">+</button>
+        </div>
+        <div class="tag-list" id="tagList">
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="main-header">
+        <div class="current-account">
+          <h2 id="currentAccountName">全部账户</h2>
+          <span class="current-balance" id="currentAccountBalance">¥0.00</span>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-primary" id="addIncomeBtn">+ 收入</button>
+          <button class="btn btn-danger" id="addExpenseBtn">- 支出</button>
+        </div>
+      </header>
+
+      <div class="summary-cards">
+        <div class="summary-card income-card">
+          <span class="card-label">总收入</span>
+          <span class="card-value" id="totalIncome">¥0.00</span>
+        </div>
+        <div class="summary-card expense-card">
+          <span class="card-label">总支出</span>
+          <span class="card-value" id="totalExpense">¥0.00</span>
+        </div>
+        <div class="summary-card net-card">
+          <span class="card-label">净结余</span>
+          <span class="card-value" id="netBalance">¥0.00</span>
+        </div>
+      </div>
+
+      <div class="filters-bar">
+        <div class="filter-group">
+          <label>类型</label>
+          <select id="filterType">
+            <option value="">全部</option>
+            <option value="income">收入</option>
+            <option value="expense">支出</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>分类</label>
+          <select id="filterCategory">
+            <option value="">全部</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>开始日期</label>
+          <input type="date" id="filterStartDate">
+        </div>
+        <div class="filter-group">
+          <label>结束日期</label>
+          <input type="date" id="filterEndDate">
+        </div>
+        <div class="filter-group">
+          <label>排序</label>
+          <select id="sortBy">
+            <option value="date">日期</option>
+            <option value="amount">金额</option>
+            <option value="created_at">创建时间</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>顺序</label>
+          <select id="sortOrder">
+            <option value="desc">降序</option>
+            <option value="asc">升序</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary" id="resetFilterBtn">重置</button>
+      </div>
+
+      <div class="transaction-list-container">
+        <table class="transaction-table">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>类型</th>
+              <th>分类</th>
+              <th>金额</th>
+              <th>账户</th>
+              <th>标签</th>
+              <th>备注</th>
+              <th>附件</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="transactionList">
+          </tbody>
+        </table>
+        <div class="empty-state" id="emptyState" style="display: none;">
+          <p>暂无交易记录</p>
+          <button class="btn btn-primary" id="emptyAddExpenseBtn">添加第一笔支出</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal" id="accountModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="accountModalTitle">添加账户</h3>
+        <button class="close-btn" data-modal="accountModal">&times;</button>
+      </div>
+      <form id="accountForm">
+        <input type="hidden" id="accountId">
+        <div class="form-group">
+          <label>账户名称 *</label>
+          <input type="text" id="accountName" required>
+        </div>
+        <div class="form-group">
+          <label>账户类型 *</label>
+          <select id="accountType" required>
+            <option value="cash">现金</option>
+            <option value="bank">银行卡</option>
+            <option value="credit">信用卡</option>
+            <option value="investment">投资账户</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>初始余额 *</label>
+          <input type="number" id="accountBalance" step="0.01" value="0" required>
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea id="accountDescription" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+          <label>货币</label>
+          <select id="accountCurrency">
+            <option value="CNY">人民币 (¥)</option>
+            <option value="USD">美元 ($)</option>
+            <option value="EUR">欧元 (€)</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal="accountModal">取消</button>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="transactionModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h3 id="transactionModalTitle">添加交易</h3>
+        <button class="close-btn" data-modal="transactionModal">&times;</button>
+      </div>
+      <form id="transactionForm">
+        <input type="hidden" id="transactionId">
+        <div class="form-row">
+          <div class="form-group">
+            <label>交易类型 *</label>
+            <select id="transactionType" required>
+              <option value="expense">支出</option>
+              <option value="income">收入</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>金额 *</label>
+            <input type="number" id="transactionAmount" step="0.01" min="0.01" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>日期 *</label>
+            <input type="date" id="transactionDate" required>
+          </div>
+          <div class="form-group">
+            <label>账户 *</label>
+            <select id="transactionAccount" required>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>分类 *</label>
+          <input type="text" id="transactionCategory" list="categoryList" placeholder="例如：餐饮、交通、工资..." required>
+          <datalist id="categoryList">
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label>标签</label>
+          <div class="tag-selector" id="tagSelector">
+          </div>
+          <div class="add-tag-inline">
+            <input type="text" id="newTagInput" placeholder="输入新标签名称">
+            <button type="button" class="btn btn-sm btn-secondary" id="addTagInlineBtn">添加</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>备注</label>
+          <textarea id="transactionNote" rows="3" placeholder="添加备注..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>附件</label>
+          <div class="attachments-list" id="attachmentsList">
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="addAttachmentBtn">
+            + 添加附件
+          </button>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal="transactionModal">取消</button>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="tagModal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h3>添加标签</h3>
+        <button class="close-btn" data-modal="tagModal">&times;</button>
+      </div>
+      <form id="tagForm">
+        <div class="form-group">
+          <label>标签名称 *</label>
+          <input type="text" id="tagName" required>
+        </div>
+        <div class="form-group">
+          <label>标签颜色</label>
+          <input type="color" id="tagColor" value="#3b82f6">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal="tagModal">取消</button>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="transactionDetailModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>交易详情</h3>
+        <button class="close-btn" data-modal="transactionDetailModal">&times;</button>
+      </div>
+      <div class="detail-content" id="transactionDetailContent">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal="transactionDetailModal">关闭</button>
+        <button type="button" class="btn btn-primary" id="editTransactionBtn">编辑</button>
+        <button type="button" class="btn btn-danger" id="deleteTransactionBtn">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
