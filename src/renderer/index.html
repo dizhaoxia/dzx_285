@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>个人财务管理</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="../node_modules/chart.js/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -68,7 +69,18 @@
           <h2 id="currentAccountName">全部账户</h2>
           <span class="current-balance" id="currentAccountBalance">¥0.00</span>
         </div>
+        <div class="header-tabs">
+          <button class="tab-btn active" data-tab="transactions">交易记录</button>
+          <button class="tab-btn" data-tab="charts">图表分析</button>
+          <button class="tab-btn" data-tab="settings">设置</button>
+        </div>
         <div class="header-actions">
+          <div class="currency-selector">
+            <label>本位币:</label>
+            <select id="baseCurrencySelect">
+              <option value="CNY">人民币 (¥)</option>
+            </select>
+          </div>
           <button class="btn btn-primary" id="addIncomeBtn">+ 收入</button>
           <button class="btn btn-danger" id="addExpenseBtn">- 支出</button>
           <button class="btn btn-secondary" id="openImportBtn">导入</button>
@@ -76,6 +88,7 @@
         </div>
       </header>
 
+      <div class="tab-content active" id="tab-transactions">
       <div class="summary-cards">
         <div class="summary-card income-card">
           <span class="card-label">总收入</span>
@@ -153,6 +166,148 @@
         <div class="empty-state" id="emptyState" style="display: none;">
           <p>暂无交易记录</p>
           <button class="btn btn-primary" id="emptyAddExpenseBtn">添加第一笔支出</button>
+        </div>
+      </div>
+      </div>
+
+      <div class="tab-content" id="tab-charts">
+        <div class="charts-container">
+          <div class="chart-filters">
+            <div class="filter-group">
+              <label>时间范围</label>
+              <select id="chartTimeRange">
+                <option value="month">本月</option>
+                <option value="3months">近3个月</option>
+                <option value="6months">近6个月</option>
+                <option value="year">本年</option>
+                <option value="all">全部</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>账户</label>
+              <select id="chartAccountFilter">
+                <option value="">全部账户</option>
+              </select>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="refreshChartsBtn">刷新图表</button>
+          </div>
+
+          <div class="chart-grid">
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>收支趋势</h3>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="trendChart"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>支出分类占比</h3>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="categoryPieChart"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>月度收支对比</h3>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="monthlyBarChart"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>账户余额分布</h3>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="accountPieChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-settings">
+        <div class="settings-container">
+          <div class="settings-section">
+            <h3>安全设置</h3>
+            <div class="setting-item">
+              <div class="setting-info">
+                <div class="setting-title">应用密码保护</div>
+                <div class="setting-desc">设置密码后，每次启动应用需要验证密码</div>
+              </div>
+              <button class="btn btn-secondary" id="setPasswordBtn">设置密码</button>
+            </div>
+            <div class="setting-item">
+              <div class="setting-info">
+                <div class="setting-title">修改密码</div>
+                <div class="setting-desc">修改当前的应用密码</div>
+              </div>
+              <button class="btn btn-secondary" id="changePasswordBtn">修改密码</button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3>货币设置</h3>
+            <div class="setting-item">
+              <div class="setting-info">
+                <div class="setting-title">本位币</div>
+                <div class="setting-desc">用于统计汇总和图表展示的默认货币</div>
+              </div>
+              <select id="settingBaseCurrency">
+                <option value="CNY">人民币 (CNY ¥)</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <div class="setting-info">
+                <div class="setting-title">汇率更新</div>
+                <div class="setting-desc">从API获取最新汇率</div>
+              </div>
+              <button class="btn btn-secondary" id="updateRatesBtn">更新汇率</button>
+            </div>
+            <div class="setting-item">
+              <div class="setting-info">
+                <div class="setting-title">手动设置汇率</div>
+                <div class="setting-desc">手动设置货币对的汇率</div>
+              </div>
+              <button class="btn btn-secondary" id="manualRateBtn">设置汇率</button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3>备份管理</h3>
+            <div class="setting-item">
+              <div class="setting-info">
+                <div class="setting-title">立即备份</div>
+                <div class="setting-desc">创建当前数据的备份文件</div>
+              </div>
+              <div class="setting-actions">
+                <button class="btn btn-secondary btn-sm" id="backupNowBtn">普通备份</button>
+                <button class="btn btn-primary btn-sm" id="backupEncryptBtn">加密备份</button>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-info">
+                <div class="setting-title">自动备份</div>
+                <div class="setting-desc">每日首次启动时自动备份，保留最近10个版本</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="autoBackupToggle" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="backup-list-section">
+              <h4>备份历史</h4>
+              <div class="backup-list" id="backupList">
+                <p class="text-muted">暂无备份记录</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -474,6 +629,113 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-modal="exportModal">取消</button>
           <button type="submit" class="btn btn-primary">导出</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="passwordModal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h3 id="passwordModalTitle">设置密码</h3>
+        <button class="close-btn" data-modal="passwordModal">&times;</button>
+      </div>
+      <form id="passwordForm">
+        <div class="form-group" id="oldPasswordGroup" style="display:none">
+          <label>当前密码 *</label>
+          <input type="password" id="oldPassword" required>
+        </div>
+        <div class="form-group">
+          <label>新密码 *</label>
+          <input type="password" id="newPassword" required minlength="6">
+        </div>
+        <div class="form-group">
+          <label>确认密码 *</label>
+          <input type="password" id="confirmPassword" required minlength="6">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal="passwordModal">取消</button>
+          <button type="submit" class="btn btn-primary">确认</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="verifyPasswordModal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h3>请输入密码</h3>
+      </div>
+      <form id="verifyPasswordForm">
+        <div class="form-group">
+          <label>密码 *</label>
+          <input type="password" id="verifyPassword" required>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">解锁</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="rateModal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h3>设置汇率</h3>
+        <button class="close-btn" data-modal="rateModal">&times;</button>
+      </div>
+      <form id="rateForm">
+        <div class="form-row">
+          <div class="form-group">
+            <label>基础货币 *</label>
+            <select id="rateBaseCurrency" required>
+              <option value="CNY">人民币 (CNY)</option>
+              <option value="USD">美元 (USD)</option>
+              <option value="EUR">欧元 (EUR)</option>
+              <option value="JPY">日元 (JPY)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>目标货币 *</label>
+            <select id="rateTargetCurrency" required>
+              <option value="USD">美元 (USD)</option>
+              <option value="CNY">人民币 (CNY)</option>
+              <option value="EUR">欧元 (EUR)</option>
+              <option value="JPY">日元 (JPY)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>汇率 *</label>
+          <input type="number" id="rateValue" step="0.0001" min="0" required placeholder="1 基础货币 = ? 目标货币">
+        </div>
+        <div class="form-group">
+          <label>生效日期</label>
+          <input type="date" id="rateDate">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal="rateModal">取消</button>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="restorePasswordModal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h3>备份已加密，请输入密码</h3>
+        <button class="close-btn" data-modal="restorePasswordModal">&times;</button>
+      </div>
+      <form id="restorePasswordForm">
+        <input type="hidden" id="restoreBackupId">
+        <div class="form-group">
+          <label>备份密码 *</label>
+          <input type="password" id="restorePassword" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal="restorePasswordModal">取消</button>
+          <button type="submit" class="btn btn-primary">确认恢复</button>
         </div>
       </form>
     </div>

@@ -20,7 +20,11 @@
     "electron-rebuild": "^3.2.9"
   },
   "dependencies": {
+    "adm-zip": "^0.5.17",
+    "axios": "^1.18.0",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
+    "chart.js": "^4.5.1",
     "knex": "^3.1.0",
     "pdfkit": "^0.19.1",
     "sqlite3": "^5.1.7",

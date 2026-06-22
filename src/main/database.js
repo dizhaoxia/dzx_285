@@ -134,6 +134,48 @@ async function createTables() {
     table.unique(['budget_id', 'category']);
     table.index('budget_id');
   });
+
+  await createTableIfNotExists('exchange_rates', function(table) {
+    table.increments('id').primary();
+    table.string('base_currency', 3).notNullable();
+    table.string('target_currency', 3).notNullable();
+    table.decimal('rate', 18, 6).notNullable();
+    table.string('source').notNullable().defaultTo('manual');
+    table.timestamp('rate_date').notNullable();
+    table.timestamp('created_at').defaultTo(db.fn.now());
+    table.unique(['base_currency', 'target_currency', 'rate_date']);
+    table.index(['base_currency', 'target_currency']);
+  });
+
+  await createTableIfNotExists('settings', function(table) {
+    table.increments('id').primary();
+    table.string('key').notNullable().unique();
+    table.text('value');
+    table.timestamp('created_at').defaultTo(db.fn.now());
+    table.timestamp('updated_at').defaultTo(db.fn.now());
+  });
+
+  await createTableIfNotExists('backups', function(table) {
+    table.increments('id').primary();
+    table.string('file_path').notNullable();
+    table.string('file_name').notNullable();
+    table.bigInteger('file_size').notNullable();
+    table.boolean('is_encrypted').notNullable().defaultTo(false);
+    table.boolean('is_compressed').notNullable().defaultTo(false);
+    table.string('checksum');
+    table.timestamp('created_at').defaultTo(db.fn.now());
+    table.index('created_at');
+  });
+
+  await createTableIfNotExists('currencies', function(table) {
+    table.increments('id').primary();
+    table.string('code', 3).notNullable().unique();
+    table.string('name').notNullable();
+    table.string('symbol').notNullable();
+    table.integer('decimal_places').notNullable().defaultTo(2);
+    table.boolean('is_active').notNullable().defaultTo(true);
+    table.timestamp('created_at').defaultTo(db.fn.now());
+  });
 }
 
 async function initDatabase() {

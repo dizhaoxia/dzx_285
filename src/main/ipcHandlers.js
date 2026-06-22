@@ -4,6 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const ImportService = require('./services/ImportService');
 const ExportService = require('./services/ExportService');
+const CurrencyService = require('./services/CurrencyService');
+const SecurityService = require('./services/SecurityService');
+const BackupService = require('./services/BackupService');
 
 const importService = new ImportService();
 const exportService = new ExportService();
@@ -11,6 +14,12 @@ const exportService = new ExportService();
 function setupIpcHandlers(ipcMain, dbModule, dialog, app, mainWindow) {
   const db = dbModule.getDb();
   const repos = createRepositories(db);
+  
+  const currencyService = new CurrencyService(db);
+  const securityService = new SecurityService(db, repos.settings);
+  const backupService = new BackupService(db, repos.backups, securityService, dbModule, app);
+  
+  currencyService.initCurrencies();
 
   ipcMain.handle('accounts:getAll', async () => {
     try {
@@ -437,6 +446,211 @@ function setupIpcHandlers(ipcMain, dbModule, dialog, app, mainWindow) {
       const data = { transactions, accounts, budgets };
       const result = await exportService.export(data, format, filePath);
       return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('charts:getIncomeExpenseTrend', async (_, filters) => {
+    try {
+      const data = await repos.charts.getIncomeExpenseTrend(filters || {});
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('charts:getExpenseByCategory', async (_, filters) => {
+    try {
+      const data = await repos.charts.getExpenseByCategory(filters || {});
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('charts:getMonthlyComparison', async (_, year) => {
+    try {
+      const data = await repos.charts.getMonthlyComparison(year);
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('charts:getAccountBalanceDistribution', async () => {
+    try {
+      const data = await repos.charts.getAccountBalanceDistribution();
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('charts:getDashboardData', async (_, accountId, targetCurrency) => {
+    try {
+      const data = await repos.charts.getDashboardData(accountId, targetCurrency);
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('currencies:getAll', async () => {
+    try {
+      const data = await currencyService.getAllCurrencies();
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('currencies:getActive', async () => {
+    try {
+      const data = await currencyService.getActiveCurrencies();
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('currencies:getRate', async (_, baseCurrency, targetCurrency) => {
+    try {
+      const rate = await currencyService.getLatestRate(baseCurrency, targetCurrency);
+      return { success: true, data: rate };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('currencies:convert', async (_, amount, fromCurrency, toCurrency) => {
+    try {
+      const result = await currencyService.convertAmount(amount, fromCurrency, toCurrency);
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('currencies:fetchRates', async (_, baseCurrency) => {
+    try {
+      const result = await currencyService.fetchRatesFromAPI(baseCurrency);
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('currencies:setManualRate', async (_, baseCurrency, targetCurrency, rate, date) => {
+    try {
+      await currencyService.setManualRate(baseCurrency, targetCurrency, rate, date);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('currencies:getRateHistory', async (_, baseCurrency, targetCurrency, days) => {
+    try {
+      const data = await currencyService.getRateHistory(baseCurrency, targetCurrency, days);
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('settings:get', async (_, key, defaultValue) => {
+    try {
+      const value = await repos.settings.get(key, defaultValue);
+      return { success: true, data: value };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('settings:set', async (_, key, value) => {
+    try {
+      await repos.settings.set(key, value);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('security:setPassword', async (_, password) => {
+    try {
+      await securityService.setPassword(password);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('security:verifyPassword', async (_, password) => {
+    try {
+      return await securityService.verifyPassword(password);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('security:hasPassword', async () => {
+    try {
+      const has = await securityService.hasPassword();
+      return { success: true, data: has };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('security:changePassword', async (_, oldPassword, newPassword) => {
+    try {
+      return await securityService.changePassword(oldPassword, newPassword);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('backups:create', async (_, options) => {
+    try {
+      const result = await backupService.createBackup(options || {});
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('backups:restore', async (_, backupId, options) => {
+    try {
+      const result = await backupService.restoreBackup(backupId, options || {});
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('backups:list', async (_, limit) => {
+    try {
+      const data = await backupService.listBackups(limit || 20);
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('backups:delete', async (_, backupId) => {
+    try {
+      const result = await backupService.deleteBackup(backupId);
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('backups:checkAutoBackup', async () => {
+    try {
+      const result = await backupService.checkAutoBackup();
+      return result;
     } catch (error) {
       return { success: false, error: error.message };
     }

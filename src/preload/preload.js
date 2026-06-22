@@ -69,5 +69,43 @@ contextBridge.exposeInMainWorld('api', {
   fs: {
     readFile: (filePath, encoding) => ipcRenderer.invoke('fs:readFile', filePath, encoding),
     stat: (filePath) => ipcRenderer.invoke('fs:stat', filePath)
+  },
+
+  charts: {
+    getIncomeExpenseTrend: (filters) => ipcRenderer.invoke('charts:getIncomeExpenseTrend', filters),
+    getExpenseByCategory: (filters) => ipcRenderer.invoke('charts:getExpenseByCategory', filters),
+    getMonthlyComparison: (year) => ipcRenderer.invoke('charts:getMonthlyComparison', year),
+    getAccountBalanceDistribution: () => ipcRenderer.invoke('charts:getAccountBalanceDistribution'),
+    getDashboardData: (accountId, targetCurrency) => ipcRenderer.invoke('charts:getDashboardData', accountId, targetCurrency)
+  },
+
+  currencies: {
+    getAll: () => ipcRenderer.invoke('currencies:getAll'),
+    getActive: () => ipcRenderer.invoke('currencies:getActive'),
+    getRate: (baseCurrency, targetCurrency) => ipcRenderer.invoke('currencies:getRate', baseCurrency, targetCurrency),
+    convert: (amount, fromCurrency, toCurrency) => ipcRenderer.invoke('currencies:convert', amount, fromCurrency, toCurrency),
+    fetchRates: (baseCurrency) => ipcRenderer.invoke('currencies:fetchRates', baseCurrency),
+    setManualRate: (baseCurrency, targetCurrency, rate, date) => ipcRenderer.invoke('currencies:setManualRate', baseCurrency, targetCurrency, rate, date),
+    getRateHistory: (baseCurrency, targetCurrency, days) => ipcRenderer.invoke('currencies:getRateHistory', baseCurrency, targetCurrency, days)
+  },
+
+  settings: {
+    get: (key, defaultValue) => ipcRenderer.invoke('settings:get', key, defaultValue),
+    set: (key, value) => ipcRenderer.invoke('settings:set', key, value)
+  },
+
+  security: {
+    setPassword: (password) => ipcRenderer.invoke('security:setPassword', password),
+    verifyPassword: (password) => ipcRenderer.invoke('security:verifyPassword', password),
+    hasPassword: () => ipcRenderer.invoke('security:hasPassword'),
+    changePassword: (oldPassword, newPassword) => ipcRenderer.invoke('security:changePassword', oldPassword, newPassword)
+  },
+
+  backups: {
+    create: (options) => ipcRenderer.invoke('backups:create', options),
+    restore: (backupId, options) => ipcRenderer.invoke('backups:restore', backupId, options),
+    list: (limit) => ipcRenderer.invoke('backups:list', limit),
+    delete: (backupId) => ipcRenderer.invoke('backups:delete', backupId),
+    checkAutoBackup: () => ipcRenderer.invoke('backups:checkAutoBackup')
   }
 });

@@ -23,7 +23,16 @@ const AppState = {
     end_date: '',
     sort_by: 'date',
     sort_order: 'desc'
-  }
+  },
+  charts: {
+    trendChart: null,
+    categoryPieChart: null,
+    monthlyBarChart: null,
+    accountPieChart: null
+  },
+  currencies: [],
+  baseCurrency: 'CNY',
+  backups: []
 };
 
 const AccountTypeIcons = {
@@ -1284,15 +1293,752 @@ function initEventListeners() {
   });
 }
 
+async function initTabNavigation() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      const tab = btn.dataset.tab;
+      switchTab(tab);
+    };
+  });
+}
+
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  
+  document.querySelectorAll('.tab-content').forEach(content => {
+    content.classList.toggle('active', content.id === `tab-${tabName}`);
+  });
+
+  if (tabName === 'charts') {
+    loadAllCharts();
+  } else if (tabName === 'settings') {
+    loadBackups();
+    loadCurrencySettings();
+  }
+}
+
+async function loadCurrencies() {
+  const result = await window.api.currencies.getAll();
+  if (result.success) {
+    AppState.currencies = result.data;
+    updateCurrencySelectors();
+  }
+}
+
+function updateCurrencySelectors() {
+  const selects = ['baseCurrencySelect', 'settingBaseCurrency', 'accountCurrency'];
+  
+  selects.forEach(selectId => {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    
+    const currentValue = select.value;
+    select.innerHTML = '';
+    
+    AppState.currencies.forEach(currency => {
+      const option = document.createElement('option');
+      option.value = currency.code;
+      option.textContent = `${currency.name} (${currency.code} ${currency.symbol})`;
+      select.appendChild(option);
+    });
+    
+    if (currentValue && AppState.currencies.some(c => c.code === currentValue)) {
+      select.value = currentValue;
+    } else if (selectId === 'accountCurrency') {
+      select.value = 'CNY';
+    } else {
+      select.value = AppState.baseCurrency;
+    }
+  });
+}
+
+async function loadCurrencySettings() {
+  const baseCurrencyResult = await window.api.settings.get('base_currency', 'CNY');
+  if (baseCurrencyResult.success) {
+    AppState.baseCurrency = baseCurrencyResult.data;
+    document.getElementById('baseCurrencySelect').value = AppState.baseCurrency;
+    document.getElementById('settingBaseCurrency').value = AppState.baseCurrency;
+  }
+}
+
+async function onBaseCurrencyChange() {
+  const newCurrency = document.getElementById('baseCurrencySelect').value;
+  if (newCurrency !== AppState.baseCurrency) {
+    AppState.baseCurrency = newCurrency;
+    await window.api.settings.set('base_currency', newCurrency);
+    document.getElementById('settingBaseCurrency').value = newCurrency;
+    updateCurrentAccountInfo();
+    updateTotalBalance();
+    loadSummary();
+    loadBudgetProgress();
+    
+    if (document.getElementById('tab-charts').classList.contains('active')) {
+      loadAllCharts();
+    }
+    
+    showToast(`本位币已切换为 ${newCurrency}`, 'success');
+  }
+}
+
+async function onSettingBaseCurrencyChange() {
+  const newCurrency = document.getElementById('settingBaseCurrency').value;
+  if (newCurrency !== AppState.baseCurrency) {
+    AppState.baseCurrency = newCurrency;
+    await window.api.settings.set('base_currency', newCurrency);
+    document.getElementById('baseCurrencySelect').value = newCurrency;
+    updateCurrentAccountInfo();
+    updateTotalBalance();
+    loadSummary();
+    loadBudgetProgress();
+    showToast(`本位币已切换为 ${newCurrency}`, 'success');
+  }
+}
+
+async function updateRates() {
+  showToast('正在获取最新汇率...', 'info');
+  const result = await window.api.currencies.fetchRates('CNY');
+  if (result.success) {
+    showToast(`成功更新 ${result.updated} 个汇率`, 'success');
+  } else {
+    showToast('更新汇率失败: ' + result.error, 'error');
+  }
+}
+
+function openRateModal() {
+  document.getElementById('rateForm').reset();
+  document.getElementById('rateDate').value = new Date().toISOString().split('T')[0];
+  openModal('rateModal');
+}
+
+async function saveRate(e) {
+  e.preventDefault();
+  
+  const baseCurrency = document.getElementById('rateBaseCurrency').value;
+  const targetCurrency = document.getElementById('rateTargetCurrency').value;
+  const rate = parseFloat(document.getElementById('rateValue').value);
+  const date = document.getElementById('rateDate').value;
+  
+  if (baseCurrency === targetCurrency) {
+    showToast('基础货币和目标货币不能相同', 'error');
+    return;
+  }
+  
+  if (!rate || rate <= 0) {
+    showToast('请输入有效的汇率', 'error');
+    return;
+  }
+  
+  const result = await window.api.currencies.setManualRate(baseCurrency, targetCurrency, rate, date);
+  if (result.success) {
+    showToast('汇率设置成功', 'success');
+    closeModal('rateModal');
+  } else {
+    showToast('设置失败: ' + result.error, 'error');
+  }
+}
+
+function formatCurrency(amount, currency = 'CNY') {
+  const num = parseFloat(amount) || 0;
+  const currencyInfo = AppState.currencies.find(c => c.code === currency);
+  const symbol = currencyInfo?.symbol || '¥';
+  const decimals = currencyInfo?.decimal_places || 2;
+  return symbol + num.toFixed(decimals);
+}
+
+async function loadAllCharts() {
+  const accountFilter = document.getElementById('chartAccountFilter').value;
+  const timeRange = document.getElementById('chartTimeRange').value;
+  
+  const now = new Date();
+  let startDate = null;
+  let endDate = new Date().toISOString();
+  
+  switch (timeRange) {
+    case 'month':
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      break;
+    case '3months':
+      startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString();
+      break;
+    case '6months':
+      startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString();
+      break;
+    case 'year':
+      startDate = new Date(now.getFullYear(), 0, 1).toISOString();
+      break;
+  }
+  
+  const filters = {
+    start_date: startDate,
+    end_date: endDate,
+    account_id: accountFilter || null,
+    group_by: timeRange === 'month' ? 'day' : timeRange === 'all' ? 'month' : 'week'
+  };
+  
+  const [trendResult, categoryResult, monthlyResult, accountResult] = await Promise.all([
+    window.api.charts.getIncomeExpenseTrend(filters),
+    window.api.charts.getExpenseByCategory(filters),
+    window.api.charts.getMonthlyComparison(now.getFullYear()),
+    window.api.charts.getAccountBalanceDistribution()
+  ]);
+  
+  if (trendResult.success) {
+    renderTrendChart(trendResult.data);
+  }
+  
+  if (categoryResult.success) {
+    renderCategoryPieChart(categoryResult.data);
+  }
+  
+  if (monthlyResult.success) {
+    renderMonthlyBarChart(monthlyResult.data);
+  }
+  
+  if (accountResult.success) {
+    renderAccountPieChart(accountResult.data);
+  }
+}
+
+function renderTrendChart(data) {
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  
+  if (AppState.charts.trendChart) {
+    AppState.charts.trendChart.destroy();
+  }
+  
+  const labels = data.map(d => d.period);
+  const incomeData = data.map(d => d.income);
+  const expenseData = data.map(d => d.expense);
+  const netData = data.map(d => d.net);
+  
+  AppState.charts.trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '收入',
+          data: incomeData,
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          fill: true,
+          tension: 0.4
+        },
+        {
+          label: '支出',
+          data: expenseData,
+          borderColor: '#ef4444',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          fill: true,
+          tension: 0.4
+        },
+        {
+          label: '净结余',
+          data: netData,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          fill: false,
+          tension: 0.4,
+          borderDash: [5, 5]
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          onClick: (e, legendItem, legend) => {
+            const ci = legend.chart;
+            const index = legendItem.datasetIndex;
+            ci.setDatasetVisibility(index, !ci.isDatasetVisible(index));
+            ci.update();
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `${context.dataset.label}: ${formatCurrency(context.raw, AppState.baseCurrency)}`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderCategoryPieChart(data) {
+  const ctx = document.getElementById('categoryPieChart').getContext('2d');
+  
+  if (AppState.charts.categoryPieChart) {
+    AppState.charts.categoryPieChart.destroy();
+  }
+  
+  const labels = data.map(d => d.category);
+  const values = data.map(d => d.amount);
+  const colors = data.map(d => d.color);
+  
+  AppState.charts.categoryPieChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          onClick: (e, legendItem, legend) => {
+            const ci = legend.chart;
+            const index = legendItem.index;
+            const meta = ci.getDatasetMeta(0);
+            meta.data[index].hidden = !meta.data[index].hidden;
+            ci.update();
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const value = context.raw;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = ((value / total) * 100).toFixed(2);
+              return `${context.label}: ${formatCurrency(value, AppState.baseCurrency)} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderMonthlyBarChart(data) {
+  const ctx = document.getElementById('monthlyBarChart').getContext('2d');
+  
+  if (AppState.charts.monthlyBarChart) {
+    AppState.charts.monthlyBarChart.destroy();
+  }
+  
+  const labels = data.map(d => d.month);
+  const incomeData = data.map(d => d.income);
+  const expenseData = data.map(d => d.expense);
+  
+  AppState.charts.monthlyBarChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '收入',
+          data: incomeData,
+          backgroundColor: 'rgba(16, 185, 129, 0.8)',
+          borderRadius: 4
+        },
+        {
+          label: '支出',
+          data: expenseData,
+          backgroundColor: 'rgba(239, 68, 68, 0.8)',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          onClick: (e, legendItem, legend) => {
+            const ci = legend.chart;
+            const index = legendItem.datasetIndex;
+            ci.setDatasetVisibility(index, !ci.isDatasetVisible(index));
+            ci.update();
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `${context.dataset.label}: ${formatCurrency(context.raw, AppState.baseCurrency)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: function(value) {
+              return formatCurrency(value, AppState.baseCurrency);
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderAccountPieChart(data) {
+  const ctx = document.getElementById('accountPieChart').getContext('2d');
+  
+  if (AppState.charts.accountPieChart) {
+    AppState.charts.accountPieChart.destroy();
+  }
+  
+  const labels = data.map(d => d.name);
+  const values = data.map(d => d.balance);
+  const colors = data.map(d => d.color);
+  
+  AppState.charts.accountPieChart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          onClick: (e, legendItem, legend) => {
+            const ci = legend.chart;
+            const index = legendItem.index;
+            const meta = ci.getDatasetMeta(0);
+            meta.data[index].hidden = !meta.data[index].hidden;
+            ci.update();
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const value = context.raw;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = ((value / total) * 100).toFixed(2);
+              return `${context.label}: ${formatCurrency(value, AppState.baseCurrency)} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function updateChartAccountFilter() {
+  const select = document.getElementById('chartAccountFilter');
+  const currentValue = select.value;
+  
+  select.innerHTML = '<option value="">全部账户</option>';
+  AppState.accounts.forEach(account => {
+    const option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = account.name;
+    select.appendChild(option);
+  });
+  
+  if (currentValue && AppState.accounts.some(a => a.id == currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+function openPasswordModal(isChange = false) {
+  const form = document.getElementById('passwordForm');
+  form.reset();
+  
+  const title = document.getElementById('passwordModalTitle');
+  const oldPasswordGroup = document.getElementById('oldPasswordGroup');
+  
+  if (isChange) {
+    title.textContent = '修改密码';
+    oldPasswordGroup.style.display = 'block';
+  } else {
+    title.textContent = '设置密码';
+    oldPasswordGroup.style.display = 'none';
+  }
+  
+  openModal('passwordModal');
+}
+
+async function savePassword(e) {
+  e.preventDefault();
+  
+  const oldPassword = document.getElementById('oldPassword').value;
+  const newPassword = document.getElementById('newPassword').value;
+  const confirmPassword = document.getElementById('confirmPassword').value;
+  
+  if (newPassword !== confirmPassword) {
+    showToast('两次输入的密码不一致', 'error');
+    return;
+  }
+  
+  if (newPassword.length < 6) {
+    showToast('密码长度至少6位', 'error');
+    return;
+  }
+  
+  let result;
+  if (document.getElementById('oldPasswordGroup').style.display !== 'none') {
+    result = await window.api.security.changePassword(oldPassword, newPassword);
+  } else {
+    result = await window.api.security.setPassword(newPassword);
+  }
+  
+  if (result.success) {
+    showToast('密码设置成功', 'success');
+    closeModal('passwordModal');
+  } else {
+    showToast(result.error || '设置失败', 'error');
+  }
+}
+
+async function checkAndVerifyPassword() {
+  const hasPasswordResult = await window.api.security.hasPassword();
+  if (hasPasswordResult.success && hasPasswordResult.data) {
+    openModal('verifyPasswordModal');
+    return false;
+  }
+  return true;
+}
+
+async function verifyPassword(e) {
+  e.preventDefault();
+  
+  const password = document.getElementById('verifyPassword').value;
+  const result = await window.api.security.verifyPassword(password);
+  
+  if (result.success) {
+    closeModal('verifyPasswordModal');
+    showToast('验证成功', 'success');
+  } else {
+    showToast(result.error || '密码错误', 'error');
+  }
+}
+
+async function loadBackups() {
+  const result = await window.api.backups.list(20);
+  if (result.success) {
+    AppState.backups = result.data;
+    renderBackupList();
+  }
+}
+
+function renderBackupList() {
+  const list = document.getElementById('backupList');
+  
+  if (AppState.backups.length === 0) {
+    list.innerHTML = '<p class="text-muted">暂无备份记录</p>';
+    return;
+  }
+  
+  list.innerHTML = '';
+  
+  AppState.backups.forEach(backup => {
+    const item = document.createElement('div');
+    item.className = 'backup-item';
+    
+    const badges = [];
+    if (backup.is_encrypted) {
+      badges.push('<span class="backup-badge encrypted">已加密</span>');
+    }
+    if (backup.is_compressed) {
+      badges.push('<span class="backup-badge compressed">已压缩</span>');
+    }
+    
+    const date = new Date(backup.created_at);
+    const sizeKB = (backup.file_size / 1024).toFixed(2);
+    
+    item.innerHTML = `
+      <div class="backup-info">
+        <div class="backup-name">${escapeHtml(backup.file_name)}</div>
+        <div class="backup-meta">
+          <span>${date.toLocaleString('zh-CN')}</span>
+          <span>${sizeKB} KB</span>
+          ${badges.join('')}
+        </div>
+      </div>
+      <div class="backup-actions">
+        <button class="btn btn-secondary btn-sm" onclick="restoreBackup(${backup.id}, ${backup.is_encrypted})">恢复</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteBackup(${backup.id})">删除</button>
+      </div>
+    `;
+    
+    list.appendChild(item);
+  });
+}
+
+async function createBackup(encrypt = false) {
+  let password = null;
+  
+  if (encrypt) {
+    password = prompt('请输入备份密码（用于恢复时解密）：');
+    if (!password) {
+      showToast('已取消加密备份', 'info');
+      return;
+    }
+    if (password.length < 6) {
+      showToast('密码长度至少6位', 'error');
+      return;
+    }
+  }
+  
+  showToast('正在创建备份...', 'info');
+  
+  const result = await window.api.backups.create({
+    compress: true,
+    encrypt: encrypt,
+    password: password,
+    keepCount: 10
+  });
+  
+  if (result.success) {
+    showToast(`备份成功${result.deleted_old ? `，已删除 ${result.deleted_old} 个旧备份` : ''}`, 'success');
+    loadBackups();
+  } else {
+    showToast('备份失败: ' + result.error, 'error');
+  }
+}
+
+function restoreBackup(backupId, isEncrypted) {
+  if (!confirm('确定要恢复此备份吗？当前数据将被覆盖，建议先备份当前数据。')) {
+    return;
+  }
+  
+  if (isEncrypted) {
+    document.getElementById('restoreBackupId').value = backupId;
+    document.getElementById('restorePassword').value = '';
+    openModal('restorePasswordModal');
+  } else {
+    confirmRestore(backupId, null);
+  }
+}
+
+async function confirmRestoreWithPassword(e) {
+  e.preventDefault();
+  
+  const backupId = parseInt(document.getElementById('restoreBackupId').value);
+  const password = document.getElementById('restorePassword').value;
+  
+  if (!password) {
+    showToast('请输入备份密码', 'error');
+    return;
+  }
+  
+  closeModal('restorePasswordModal');
+  await confirmRestore(backupId, password);
+}
+
+async function confirmRestore(backupId, password) {
+  showToast('正在恢复备份...', 'info');
+  
+  const result = await window.api.backups.restore(backupId, { password });
+  
+  if (result.success) {
+    showToast('恢复成功，应用将重新加载数据...', 'success');
+    
+    setTimeout(async () => {
+      await Promise.all([
+        loadAccounts(),
+        loadTags(),
+        loadTransactions(),
+        loadSummary(),
+        loadBudgetProgress(),
+        loadBackups()
+      ]);
+    }, 1000);
+  } else {
+    showToast('恢复失败: ' + result.error, 'error');
+  }
+}
+
+async function deleteBackup(backupId) {
+  if (!confirm('确定要删除此备份吗？')) {
+    return;
+  }
+  
+  const result = await window.api.backups.delete(backupId);
+  if (result.success) {
+    showToast('删除成功', 'success');
+    loadBackups();
+  } else {
+    showToast('删除失败: ' + result.error, 'error');
+  }
+}
+
+async function checkAutoBackup() {
+  const autoBackupEnabled = await window.api.settings.get('auto_backup_enabled', true);
+  if (autoBackupEnabled.data === false) return;
+  
+  const result = await window.api.backups.checkAutoBackup();
+  if (result.success && !result.skipped) {
+    console.log('自动备份完成');
+  }
+}
+
+async function initNewEventListeners() {
+  document.getElementById('baseCurrencySelect').onchange = onBaseCurrencyChange;
+  document.getElementById('settingBaseCurrency').onchange = onSettingBaseCurrencyChange;
+  document.getElementById('updateRatesBtn').onclick = updateRates;
+  document.getElementById('manualRateBtn').onclick = openRateModal;
+  document.getElementById('rateForm').onsubmit = saveRate;
+  
+  document.getElementById('setPasswordBtn').onclick = () => openPasswordModal(false);
+  document.getElementById('changePasswordBtn').onclick = () => openPasswordModal(true);
+  document.getElementById('passwordForm').onsubmit = savePassword;
+  document.getElementById('verifyPasswordForm').onsubmit = verifyPassword;
+  
+  document.getElementById('backupNowBtn').onclick = () => createBackup(false);
+  document.getElementById('backupEncryptBtn').onclick = () => createBackup(true);
+  document.getElementById('refreshChartsBtn').onclick = loadAllCharts;
+  document.getElementById('chartTimeRange').onchange = loadAllCharts;
+  document.getElementById('chartAccountFilter').onchange = loadAllCharts;
+  document.getElementById('restorePasswordForm').onsubmit = confirmRestoreWithPassword;
+  
+  document.getElementById('autoBackupToggle').onchange = async (e) => {
+    await window.api.settings.set('auto_backup_enabled', e.target.checked);
+    showToast(`自动备份已${e.target.checked ? '开启' : '关闭'}`, 'success');
+  };
+}
+
 async function init() {
   initEventListeners();
+  initTabNavigation();
+  initNewEventListeners();
+  
   await Promise.all([
     loadAccounts(),
-    loadTags()
+    loadTags(),
+    loadCurrencies(),
+    loadCurrencySettings()
   ]);
+  
+  updateChartAccountFilter();
   loadTransactions();
   loadSummary();
   loadBudgetProgress();
+  
+  checkAutoBackup();
+  checkAndVerifyPassword();
 }
 
 window.onload = init;
